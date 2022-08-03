@@ -4,7 +4,6 @@
 import sys
 import sympy as sp
 from fractions import Fraction
-import sympy as sy
 from sys import stdin
 
 
@@ -16,8 +15,9 @@ def inputParse():
         new_list = [Fraction(elem) for elem in line.split()]
         input.append(new_list)
     n = len(input[0])
-    C = sp.Matrix([Fraction(elem) for elem in input[0]])
+    c = sp.Matrix([Fraction(elem) for elem in input[0]])
     input.pop(0)
+    
 
     m = len(input)
 
@@ -55,9 +55,24 @@ def inputParse():
     I = sp.eye(B_len)
     A = A.row_join(I)
 
+    # append 0's to the end of matrix c
+    for n in range(B_len):
+        c = c.col_join(sp.Matrix([Fraction(0)]))
     # Basic and non-basic matrices
     A_B = computeBasic(A, B)
     A_NB = computeBasic(A, NB)
+
+    # print("m = ", m)
+    # print("n = ", n)
+    # print("b = ", b)
+    # print("A = ", A)
+    # print("c = ", c)
+    # print("NB = ", NB)
+    # print("B = ", B)
+    # print("A_B = ", A_B)
+    # print("A_NB = ", A_NB)
+
+    setup_simplex(A, b, B, c, NB)
 
 
 def computeBasic(A, B):
@@ -78,8 +93,17 @@ def u_k(zi, B):
 def computeX(x_B, B, NB):
     pass
 
-def compute_zn(A, A_B_inv, B, C, NB):
-    pass
+def get_c(c, B):
+    c_new = sp.Matrix([c[n] for n in B])
+    return c_new
+
+
+def compute_zn(A_B_inv, B, c, NB, A_NB):
+    A_prod = A_B_inv * A_NB
+    cb = get_c(c, B)
+    cn = get_c(c, NB)
+    z_N = (A_prod.T * cb) - cn
+    return z_N
 
 def checkprimalfeasible(b):
     for x in b:
@@ -87,81 +111,100 @@ def checkprimalfeasible(b):
             return 0
     return 1
 
-def checkdualfeasible(C):
-    for x in C:
+def checkdualfeasible(c):
+    for x in c:
         if not x <= 0:
             return 0
     return 1
 
-def setup_simplex(A, b, B, C, NB):
+def setup_simplex(A, b, B, c, NB):
     result = ""
     if checkprimalfeasible(b):
-        result = primal_simplex(A, b, B, C, NB)
+        result = primal_simplex(A, b, B, c, NB)
     elif checkdualfeasible(C):
-        result = dual_simplex(A, b, B, C, NB)
+        result = dual_simplex(A, b, B, c, NB)
     else:
-        dual_simplex(A, b, B, 0, NB)
+        dualreturn =  dual_simplex(A, b, B, 0, NB)
+        B_aux = dualreturn[B_aux]
+        NB_aux = dualreturn[NB_aux]
+        result = primal_simplex(A, b, B_aux, c, NB_aux)
 
-def primal_simplex(A, b, B, C, NB):
+def primal_simplex(A, b, B, c, NB):
 
     A_B = computeBasic(A, B)
     A_NB = computeBasic(A, NB)
 
-    if not checkprimalfeasible(A_B, b):
+    if not checkprimalfeasible(b):
         print("primal infeasible")
-
     while True:
         A_B_inv = A_B.inv()
         x_B = A_B_inv * b
-
-        z_N = compute_zn(A, A_B_inv, B, C, NB)
+        z_N = compute_zn(A_B_inv, B, c, NB, A_NB)
         if primalOptimal(z_N):
-            result = compute_objective(C, A_B_inv, B, b)
+            result = compute_objective(c, A_B_inv, B, b)
             return ("optimal", result, x_B)
 
         pivot(A, A_B_inv, B, NB, x_B, z_N)
+        return
 
     pass
 
 def primalOptimal(z_val):
     # C_B.transpose() * A_B_inc * b
-    pass
+    for val in z_val:
+        if not val > 0:
+            return 0
+    return 1
 
 def dualOptimal(z_val):
      # C_B.transpose() * A_B_inc * b
     pass
 
-def dual_simplex(A, b, B, C, NB):
+def dual_simplex(A, b, B, c, NB):
     A_B = computeBasic(A, B)
     A_NB = computeBasic(A, NB)
-    if not C == 0:
-        if not checkdualfeasible(A, A_B, b, B, C, NB):
+    if not c == 0:
+        if not checkdualfeasible(A, A_B, b, B, c, NB):
             return "Infeasible"
 
         while True:
             A_B_inv = A_B.inv()
             x_B = A_B_inv * b
-
-            z_N = compute_zn(A, A_B_inv, B, C, NB)
+            A_NB = computeBasic(A, NB)
+            z_N = compute_zn(A, A_B_inv, B, c, NB, A_NB)
             if dualOptimal(x_B):
-                result = compute_objective(C, A_B_inv, B, b)
+                result = compute_objective(c, A_B_inv, B, b)
                 return ("optimal", result, x_B)
 
             pivot(A, A_B_inv, B, NB, x_B, z_N)
     else:
         B_1 = B
         NB_1 = NB
-        primal_simplex(A, b, B_1, C, NB_1)
+        primal_simplex(A, b, B_1, c, NB_1)
 
 def pivot(A, A_B_inv, B, NB, x_B, z_N):
-    i, i_index, j, j_index, del_x = 0
-
-    B[i_index] = j
-    NB[j_index] = i
+    i = 0
+    i_index = 0
+    j = 0 
+    j_index = 0 
+    del_x = 0
 
     B.sort()
     NB.sort()
 
+    # entering variable
+    for iterator, val in enumerate(z_N):
+        if val < 0:
+            j = iterator
+            break
+    # leaving variable
+    del_xB = A_B_inv * A.col(j)
+    col, row = sp.shape(del_xB)
+    del_xN = sp.zeros(col, row)
+    # print(B)
+    # print(NB)
+    
+    
 
 def compute_objective(c, AB_inv, B, b):
     c_B = sp.Matrix(c[val] for val in B)
